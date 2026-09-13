@@ -1,0 +1,16 @@
+# Go binaries
+/bin/
+*.exe
+
+# Node
+web/node_modules/
+web/.next/
+web/out/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
