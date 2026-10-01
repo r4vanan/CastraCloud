@@ -19,7 +19,17 @@ export default async function FindingsPage({
 
   return (
     <>
-      <h1>Findings</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h1 style={{ margin: 0 }}>Findings</h1>
+        <div className="actions">
+          <a className="btn" href="/api/export/findings" style={{ textDecoration: "none" }}>
+            Export CSV
+          </a>
+          <a className="btn" href="/api/export/report" style={{ textDecoration: "none" }}>
+            Download PDF report
+          </a>
+        </div>
+      </div>
       <Filters severity={severity} status={status} />
       <div className="card">
         {findings.length === 0 ? (

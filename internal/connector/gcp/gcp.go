@@ -25,7 +25,13 @@ type GCP struct {
 
 // New builds a GCP connector from Application Default Credentials.
 func New(ctx context.Context, cfg connector.Config) (connector.Connector, error) {
-	creds, err := google.FindDefaultCredentials(ctx, storage.CloudPlatformScope, compute.CloudPlatformScope)
+	var creds *google.Credentials
+	var err error
+	if strings.TrimSpace(cfg.Credentials) != "" {
+		creds, err = google.CredentialsFromJSON(ctx, []byte(cfg.Credentials), storage.CloudPlatformScope, compute.CloudPlatformScope)
+	} else {
+		creds, err = google.FindDefaultCredentials(ctx, storage.CloudPlatformScope, compute.CloudPlatformScope)
+	}
 	if err != nil {
 		return nil, err
 	}

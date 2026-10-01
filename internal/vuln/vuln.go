@@ -27,12 +27,12 @@ type Result struct {
 
 // cve is a curated vulnerability record.
 type cve struct {
-	id        string
-	pkg       string
-	fixed     string // first fixed version ("" = no fix yet)
+	id         string
+	pkg        string
+	fixed      string // first fixed version ("" = no fix yet)
 	introduced string // optional: vulnerable from this version
-	severity  string
-	title     string
+	severity   string
+	title      string
 }
 
 // db is the built-in, seedable CVE catalog.

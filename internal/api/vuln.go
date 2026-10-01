@@ -67,8 +67,10 @@ func (s *Server) handleVulnScan(w http.ResponseWriter, r *http.Request) {
 		if assetID != uuid.Nil {
 			f.AssetID = assetID
 		}
-		if err := s.db.IngestFinding(r.Context(), f); err != nil {
+		if inserted, err := s.db.IngestFinding(r.Context(), f); err != nil {
 			s.log.Error("vuln finding ingest failed", "error", err)
+			continue
+		} else if !inserted {
 			continue
 		}
 		saved = append(saved, *f)

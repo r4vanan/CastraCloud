@@ -12,11 +12,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/castracloud/castracloud/internal/config"
+	"github.com/castracloud/castracloud/internal/connector"
 	_ "github.com/castracloud/castracloud/internal/connector/aws"   // registers the aws provider
 	_ "github.com/castracloud/castracloud/internal/connector/azure" // registers the azure provider
 	_ "github.com/castracloud/castracloud/internal/connector/gcp"   // registers the gcp provider
-	"github.com/castracloud/castracloud/internal/config"
-	"github.com/castracloud/castracloud/internal/connector"
 	"github.com/castracloud/castracloud/internal/cspm"
 	"github.com/castracloud/castracloud/internal/logging"
 )
@@ -44,10 +44,10 @@ func main() {
 	log.Info("scan complete", "findings", len(findings), "duration", time.Since(start))
 
 	report := struct {
-		TenantID  string          `json:"tenant_id"`
-		Provider  string          `json:"provider"`
-		ScannedAt time.Time       `json:"scanned_at"`
-		Findings  []cspmFinding   `json:"findings"`
+		TenantID  string        `json:"tenant_id"`
+		Provider  string        `json:"provider"`
+		ScannedAt time.Time     `json:"scanned_at"`
+		Findings  []cspmFinding `json:"findings"`
 	}{
 		TenantID:  config.Env("CSPM_TENANT_ID", ""),
 		Provider:  provider,

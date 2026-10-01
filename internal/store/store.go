@@ -26,39 +26,40 @@ type User struct {
 	Role         string    `json:"role"` // owner | admin | analyst | viewer
 	FullName     string    `json:"full_name"`
 	IsActive     bool      `json:"is_active"`
+	MFAEnabled   bool      `json:"mfa_enabled"`
 	PasswordHash string    `json:"-"` // never serialized
 	CreatedAt    time.Time `json:"created_at"`
 }
 
 // Asset is a discovered cloud resource.
 type Asset struct {
-	ID         uuid.UUID `json:"id"`
-	TenantID   uuid.UUID `json:"tenant_id"`
-	Provider   string    `json:"provider"` // aws | azure | gcp
-	AssetType  string    `json:"asset_type"`
-	ExternalID string    `json:"external_id"`
-	Region     string    `json:"region"`
-	Name       string    `json:"name"`
+	ID         uuid.UUID      `json:"id"`
+	TenantID   uuid.UUID      `json:"tenant_id"`
+	Provider   string         `json:"provider"` // aws | azure | gcp
+	AssetType  string         `json:"asset_type"`
+	ExternalID string         `json:"external_id"`
+	Region     string         `json:"region"`
+	Name       string         `json:"name"`
 	Properties map[string]any `json:"properties"`
-	RiskScore  int       `json:"risk_score"`
-	FirstSeen  time.Time `json:"first_seen"`
-	LastSeen   time.Time `json:"last_seen"`
+	RiskScore  int            `json:"risk_score"`
+	FirstSeen  time.Time      `json:"first_seen"`
+	LastSeen   time.Time      `json:"last_seen"`
 }
 
-// Finding is a security issue detected by CSPM or the WAF.
+// Finding is a security issue detected by CSPM or domain monitoring.
 type Finding struct {
-	ID          uuid.UUID `json:"id"`
-	TenantID    uuid.UUID `json:"tenant_id"`
-	AssetID     uuid.UUID `json:"asset_id,omitempty"`
-	Source      string    `json:"source"` // cspm | waf | domain
-	RuleID      string    `json:"rule_id"`
-	Title       string    `json:"title"`
-	Severity    string    `json:"severity"` // critical | high | medium | low | info
-	Status      string    `json:"status"`   // open | resolved | suppressed
-	Description string    `json:"description"`
-	Remediation string    `json:"remediation"`
-	RiskScore   int       `json:"risk_score"`
-	DetectedAt  time.Time `json:"detected_at"`
+	ID          uuid.UUID  `json:"id"`
+	TenantID    uuid.UUID  `json:"tenant_id"`
+	AssetID     uuid.UUID  `json:"asset_id,omitempty"`
+	Source      string     `json:"source"` // cspm | domain
+	RuleID      string     `json:"rule_id"`
+	Title       string     `json:"title"`
+	Severity    string     `json:"severity"` // critical | high | medium | low | info
+	Status      string     `json:"status"`   // open | resolved | suppressed
+	Description string     `json:"description"`
+	Remediation string     `json:"remediation"`
+	RiskScore   int        `json:"risk_score"`
+	DetectedAt  time.Time  `json:"detected_at"`
 	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
 }
 
@@ -75,37 +76,17 @@ type FindingSummary struct {
 	Info       int `json:"info"`
 }
 
-// WAFRule defines a Web Application Firewall rule.
-type WAFRule struct {
-	ID          uuid.UUID `json:"id"`
-	TenantID    uuid.UUID `json:"tenant_id"`
-	Name        string    `json:"name"`
-	Phase       string    `json:"phase"`   // request | response
-	Action      string    `json:"action"`  // block | allow | log | challenge
-	Match       string    `json:"match"`   // condition (operator:field:pattern)
-	Enabled     bool      `json:"enabled"`
-	Priority    int       `json:"priority"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// Domain is a managed DNS zone.
-type Domain struct {
-	ID            uuid.UUID  `json:"id"`
-	TenantID      uuid.UUID  `json:"tenant_id"`
-	Name          string     `json:"name"`
-	Provider      string     `json:"provider"` // route53 | cloudflare | ...
-	CertExpiresAt *time.Time `json:"cert_expires_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-}
-
-// DNSRecord is a record within a Domain.
-type DNSRecord struct {
-	ID       uuid.UUID `json:"id"`
-	DomainID uuid.UUID `json:"domain_id"`
-	Type     string    `json:"type"` // A | AAAA | CNAME | TXT | MX ...
-	Name     string    `json:"name"`
-	Value    string    `json:"value"`
-	TTL      int       `json:"ttl"`
+// CloudConnector represents an integrated AWS, GCP, or Azure account.
+type CloudConnector struct {
+	ID                   uuid.UUID  `json:"id"`
+	TenantID             uuid.UUID  `json:"tenant_id"`
+	Name                 string     `json:"name"`
+	Provider             string     `json:"provider"` // aws | gcp | azure
+	Region               string     `json:"region"`
+	CredentialsEncrypted []byte     `json:"-"`
+	Status               string     `json:"status"`
+	LastScannedAt        *time.Time `json:"last_scanned_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 // DB wraps the connection pool and exposes typed queries.

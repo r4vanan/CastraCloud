@@ -17,15 +17,12 @@ const (
 	PermConnectorsRead  = "connectors:read"
 	PermConnectorsWrite = "connectors:write"
 	PermScansRun        = "scans:run"
-	PermDomainsRead     = "domains:read"
-	PermDomainsWrite    = "domains:write"
-	PermWAFRead         = "waf:read"
-	PermWAFWrite        = "waf:write"
 	PermUsersManage     = "users:manage"
 	PermAuditRead       = "audit:read"
 	PermComplianceRead  = "compliance:read"
 	PermAlertsRead      = "alerts:read"
 	PermAlertsWrite     = "alerts:write"
+	PermAIUse           = "ai:use"
 )
 
 func allPermissions() map[string]bool {
@@ -36,15 +33,12 @@ func allPermissions() map[string]bool {
 		PermConnectorsRead:  true,
 		PermConnectorsWrite: true,
 		PermScansRun:        true,
-		PermDomainsRead:     true,
-		PermDomainsWrite:    true,
-		PermWAFRead:         true,
-		PermWAFWrite:        true,
 		PermUsersManage:     true,
 		PermAuditRead:       true,
 		PermComplianceRead:  true,
 		PermAlertsRead:      true,
 		PermAlertsWrite:     true,
+		PermAIUse:           true,
 	}
 }
 
@@ -60,16 +54,13 @@ var rolePermissions = map[string]map[string]bool{
 		PermFindingsWrite:  true,
 		PermAssetsRead:     true,
 		PermScansRun:       true,
-		PermDomainsRead:    true,
-		PermWAFRead:        true,
 		PermComplianceRead: true,
 		PermAlertsRead:     true,
+		PermAIUse:          true,
 	},
 	RoleViewer: {
 		PermFindingsRead:   true,
 		PermAssetsRead:     true,
-		PermDomainsRead:    true,
-		PermWAFRead:        true,
 		PermAuditRead:      true,
 		PermComplianceRead: true,
 		PermAlertsRead:     true,

@@ -4,10 +4,12 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
@@ -22,16 +24,37 @@ type Azure struct {
 	accounts *armstorage.AccountsClient
 }
 
-// New builds an Azure connector from DefaultAzureCredential. The subscription
-// is read from AZURE_SUBSCRIPTION_ID.
+// New builds an Azure connector from configured service-principal credentials
+// or DefaultAzureCredential. The subscription defaults to AZURE_SUBSCRIPTION_ID.
 func New(ctx context.Context, cfg connector.Config) (connector.Connector, error) {
 	sub := os.Getenv("AZURE_SUBSCRIPTION_ID")
-	if sub == "" {
-		return nil, errors.New("AZURE_SUBSCRIPTION_ID is required")
+	var cred azcore.TokenCredential
+	var err error
+	if strings.TrimSpace(cfg.Credentials) != "" {
+		var creds struct {
+			SubscriptionID string `json:"subscription_id"`
+			TenantID       string `json:"tenant_id"`
+			ClientID       string `json:"client_id"`
+			ClientSecret   string `json:"client_secret"`
+		}
+		if err := json.Unmarshal([]byte(cfg.Credentials), &creds); err != nil {
+			return nil, err
+		}
+		if creds.SubscriptionID != "" {
+			sub = creds.SubscriptionID
+		}
+		if creds.TenantID == "" || creds.ClientID == "" || creds.ClientSecret == "" {
+			return nil, errors.New("azure connector credentials require tenant_id, client_id, and client_secret")
+		}
+		cred, err = azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
+	} else {
+		cred, err = azidentity.NewDefaultAzureCredential(nil)
 	}
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
+	}
+	if sub == "" {
+		return nil, errors.New("azure connector requires subscription_id or AZURE_SUBSCRIPTION_ID")
 	}
 	nsg, err := armnetwork.NewSecurityGroupsClient(sub, cred, nil)
 	if err != nil {

@@ -135,12 +135,12 @@ type OIDCIdentity struct {
 }
 
 type tokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	IDToken      string `json:"id_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
-	Error        string `json:"error"`
-	ErrorDesc    string `json:"error_description"`
+	AccessToken string `json:"access_token"`
+	IDToken     string `json:"id_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+	Error       string `json:"error"`
+	ErrorDesc   string `json:"error_description"`
 }
 
 // Exchange redeems an authorization code and verifies the returned ID token.

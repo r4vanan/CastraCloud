@@ -28,7 +28,7 @@ func TestVerifyIDToken(t *testing.T) {
 	}
 
 	c := &OIDCClient{
-		cfg: OIDCConfig{ClientID: "test-client"},
+		cfg:       OIDCConfig{ClientID: "test-client"},
 		discovery: oidcDiscovery{Issuer: "https://issuer.example.com"},
 		jwks: jwkSet{Keys: []jwk{{
 			Kty: "RSA",

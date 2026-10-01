@@ -21,7 +21,7 @@ func asset(t *testing.T, typ, external, name string, props map[string]any) store
 
 func TestAnalyzeExposureAndRelations(t *testing.T) {
 	web := asset(t, "ec2", "i-111", "web-1", map[string]any{
-		"public_ip": "1.2.3.4",
+		"public_ip":  "1.2.3.4",
 		"related_to": []any{"bucket-prod"},
 	})
 	bucket := asset(t, "s3", "bucket-prod", "bucket-prod", map[string]any{})

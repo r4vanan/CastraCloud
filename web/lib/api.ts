@@ -34,41 +34,6 @@ export type Summary = {
   };
 };
 
-export type WAFRule = {
-  id: string;
-  name: string;
-  phase: string;
-  action: string;
-  match: string;
-  enabled: boolean;
-  priority: number;
-};
-
-export type Domain = {
-  id: string;
-  name: string;
-  provider: string;
-  cert_expires_at?: string;
-};
-
-export type DNSRecord = {
-  id: string;
-  domain_id: string;
-  type: string;
-  name: string;
-  value: string;
-  ttl: number;
-};
-
-export type Subdomain = {
-  id: string;
-  domain_id: string;
-  name: string;
-  source: string;
-  first_seen: string;
-  last_seen: string;
-};
-
 export type AlertChannel = {
   id: string;
   tenant_id: string;
@@ -144,20 +109,59 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type CloudConnector = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  provider: "aws" | "gcp" | "azure";
+  region: string;
+  status: string;
+  last_scanned_at?: string;
+  created_at: string;
+};
+
+export type User = {
+  id: string;
+  tenant_id: string;
+  email: string;
+  role: string;
+  full_name: string;
+  is_active: boolean;
+  mfa_enabled: boolean;
+  created_at: string;
+};
+
+export type TrendPoint = {
+  date: string;
+  count: number;
+};
+
+export type Asset = {
+  id: string;
+  tenant_id: string;
+  provider: string;
+  asset_type: string;
+  external_id: string;
+  region: string;
+  name: string;
+  properties: Record<string, unknown>;
+  risk_score: number;
+  first_seen: string;
+  last_seen: string;
+};
+
 export const api = {
   summary: () => request<Summary>(`/v1/summary`),
+  trend: (days = 30) => request<TrendPoint[]>(`/v1/summary/trend?days=${days}`),
+  me: () => request<User>(`/v1/auth/me`),
   findings: (severity = "", status = "") => {
     const qs = new URLSearchParams();
     if (severity) qs.set("severity", severity);
     if (status) qs.set("status", status);
     return request<Finding[]>(`/v1/findings?${qs.toString()}`);
   },
-  wafRules: () => request<WAFRule[]>(`/v1/waf/rules`),
-  domains: () => request<Domain[]>(`/v1/domains`),
-  dnsRecords: (domainId: string) =>
-    request<DNSRecord[]>(`/v1/domains/${domainId}/records`),
-  subdomains: (domainId: string) =>
-    request<Subdomain[]>(`/v1/domains/${domainId}/subdomains`),
+  assets: () => request<Asset[]>(`/v1/assets`),
+  connectors: () => request<CloudConnector[]>(`/v1/connectors`),
   alerts: () => request<AlertChannel[]>(`/v1/alerts`),
   frameworks: () => request<Framework[]>(`/v1/compliance/frameworks`),
   controls: (frameworkId: string) =>

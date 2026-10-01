@@ -15,16 +15,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   api:
     build: .
     command: ["/app/api"]
@@ -46,24 +36,6 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
-
-  waf:
-    build: .
-    command: ["/app/waf"]
-    environment:
-      WAF_PORT: "8000"
-      WAF_UPSTREAM: http://api:8080
-      WAF_RATE_LIMIT: ${WAF_RATE_LIMIT:-100}
-      WAF_RATE_WINDOW: ${WAF_RATE_WINDOW:-60s}
-      WAF_MAX_BODY_BYTES: ${WAF_MAX_BODY_BYTES:-65536}
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    depends_on:
-      - api
-      - redis
-    ports:
-      - "8000:8000"
 
   # One-shot collector; run with: docker compose --profile scan run --rm cspm
   cspm:

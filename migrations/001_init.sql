@@ -47,18 +47,6 @@ CREATE TABLE IF NOT EXISTS findings (
 CREATE INDEX IF NOT EXISTS idx_findings_tenant ON findings (tenant_id, status, severity);
 CREATE INDEX IF NOT EXISTS idx_findings_rule ON findings (rule_id);
 
-CREATE TABLE IF NOT EXISTS waf_rules (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    phase       TEXT NOT NULL DEFAULT 'request',
-    action      TEXT NOT NULL DEFAULT 'block',
-    match       TEXT NOT NULL DEFAULT '',
-    enabled     BOOLEAN NOT NULL DEFAULT true,
-    priority    INT NOT NULL DEFAULT 10,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS domains (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,

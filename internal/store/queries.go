@@ -45,9 +45,9 @@ func (db *DB) CreateUserWithPassword(ctx context.Context, tenantID uuid.UUID, em
 	err := db.Pool.QueryRow(ctx,
 		`INSERT INTO users (tenant_id, email, role, full_name, password_hash)
 		 VALUES ($1,$2,$3,$4,$5)
-		 RETURNING id, tenant_id, email, role, full_name, is_active, created_at`,
+		 RETURNING id, tenant_id, email, role, full_name, is_active, mfa_enabled, created_at`,
 		tenantID, email, role, fullName, passwordHash).
-		Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.FullName, &u.IsActive, &u.CreatedAt)
+		Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.FullName, &u.IsActive, &u.MFAEnabled, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -58,9 +58,9 @@ func (db *DB) CreateUserWithPassword(ctx context.Context, tenantID uuid.UUID, em
 func (db *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	u := &User{}
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, tenant_id, email, role, full_name, is_active, password_hash, created_at
+		`SELECT id, tenant_id, email, role, full_name, is_active, mfa_enabled, password_hash, created_at
 		 FROM users WHERE email = $1`, email).
-		Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.FullName, &u.IsActive, &u.PasswordHash, &u.CreatedAt)
+		Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.FullName, &u.IsActive, &u.MFAEnabled, &u.PasswordHash, &u.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -74,9 +74,9 @@ func (db *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 func (db *DB) GetUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	u := &User{}
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, tenant_id, email, role, full_name, is_active, created_at
+		`SELECT id, tenant_id, email, role, full_name, is_active, mfa_enabled, created_at
 		 FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.FullName, &u.IsActive, &u.CreatedAt)
+		Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.FullName, &u.IsActive, &u.MFAEnabled, &u.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -113,15 +113,35 @@ func (db *DB) UpsertAsset(ctx context.Context, a *Asset) error {
 		Scan(&a.ID)
 }
 
-// IngestFinding stores a finding, linking it to its asset if known.
-func (db *DB) IngestFinding(ctx context.Context, f *Finding) error {
-	return db.Pool.QueryRow(ctx,
+// IngestFinding stores a finding, linking it to its asset if known. It skips
+// (returns false) when an identical open finding already exists, so re-scanning
+// the same account does not create duplicates.
+func (db *DB) IngestFinding(ctx context.Context, f *Finding) (bool, error) {
+	var exists bool
+	err := db.Pool.QueryRow(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM findings
+			WHERE tenant_id = $1 AND source = $2 AND rule_id = $3
+			  AND asset_id IS NOT DISTINCT FROM $4 AND status = 'open'
+		)`, f.TenantID, f.Source, f.RuleID, nullUUID(f.AssetID)).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+
+	err = db.Pool.QueryRow(ctx,
 		`INSERT INTO findings (tenant_id, asset_id, source, rule_id, title, severity, status, description, remediation, risk_score)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		 RETURNING id, detected_at`,
 		f.TenantID, nullUUID(f.AssetID), f.Source, f.RuleID, f.Title, f.Severity, f.Status,
 		f.Description, f.Remediation, f.RiskScore).
 		Scan(&f.ID, &f.DetectedAt)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // nullUUID returns nil when id is the zero UUID, so the column stays NULL.
@@ -163,6 +183,23 @@ func (db *DB) ListFindings(ctx context.Context, tenantID uuid.UUID, severity, st
 	return out, rows.Err()
 }
 
+// GetFinding fetches a single finding by id for a tenant.
+func (db *DB) GetFinding(ctx context.Context, tenantID, id uuid.UUID) (*Finding, error) {
+	f := &Finding{}
+	err := db.Pool.QueryRow(ctx,
+		`SELECT id, tenant_id, asset_id, source, rule_id, title, severity, status, description, remediation, risk_score, detected_at, resolved_at
+		 FROM findings WHERE id = $1 AND tenant_id = $2`, id, tenantID).
+		Scan(&f.ID, &f.TenantID, &f.AssetID, &f.Source, &f.RuleID, &f.Title,
+			&f.Severity, &f.Status, &f.Description, &f.Remediation, &f.RiskScore, &f.DetectedAt, &f.ResolvedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
 // UpdateFindingStatus resolves or suppresses a finding.
 func (db *DB) UpdateFindingStatus(ctx context.Context, tenantID, id uuid.UUID, status string) error {
 	ct, err := db.Pool.Exec(ctx,
@@ -199,99 +236,4 @@ func (db *DB) FindingSummary(ctx context.Context, tenantID uuid.UUID) (*FindingS
 		return nil, err
 	}
 	return s, nil
-}
-
-// ListWAFRules returns WAF rules for a tenant.
-func (db *DB) ListWAFRules(ctx context.Context, tenantID uuid.UUID) ([]WAFRule, error) {
-	rows, err := db.Pool.Query(ctx,
-		`SELECT id, tenant_id, name, phase, action, match, enabled, priority, created_at
-		 FROM waf_rules WHERE tenant_id = $1 ORDER BY priority ASC`, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]WAFRule, 0)
-	for rows.Next() {
-		var r WAFRule
-		if err := rows.Scan(&r.ID, &r.TenantID, &r.Name, &r.Phase, &r.Action,
-			&r.Match, &r.Enabled, &r.Priority, &r.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
-// CreateWAFRule inserts a WAF rule.
-func (db *DB) CreateWAFRule(ctx context.Context, r *WAFRule) error {
-	return db.Pool.QueryRow(ctx,
-		`INSERT INTO waf_rules (tenant_id, name, phase, action, match, enabled, priority)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at`,
-		r.TenantID, r.Name, r.Phase, r.Action, r.Match, r.Enabled, r.Priority).
-		Scan(&r.ID, &r.CreatedAt)
-}
-
-// DeleteWAFRule removes a WAF rule.
-func (db *DB) DeleteWAFRule(ctx context.Context, tenantID, id uuid.UUID) error {
-	ct, err := db.Pool.Exec(ctx,
-		`DELETE FROM waf_rules WHERE id = $1 AND tenant_id = $2`, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// ListDomains returns managed domains for a tenant.
-func (db *DB) ListDomains(ctx context.Context, tenantID uuid.UUID) ([]Domain, error) {
-	rows, err := db.Pool.Query(ctx,
-		`SELECT id, tenant_id, name, provider, cert_expires_at, created_at FROM domains WHERE tenant_id = $1`, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]Domain, 0)
-	for rows.Next() {
-		var d Domain
-		if err := rows.Scan(&d.ID, &d.TenantID, &d.Name, &d.Provider, &d.CertExpiresAt, &d.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
-}
-
-// CreateDomain inserts a managed domain.
-func (db *DB) CreateDomain(ctx context.Context, d *Domain) error {
-	return db.Pool.QueryRow(ctx,
-		`INSERT INTO domains (tenant_id, name, provider) VALUES ($1,$2,$3) RETURNING id, created_at`,
-		d.TenantID, d.Name, d.Provider).Scan(&d.ID, &d.CreatedAt)
-}
-
-// ListDNSRecords returns records for a domain.
-func (db *DB) ListDNSRecords(ctx context.Context, domainID uuid.UUID) ([]DNSRecord, error) {
-	rows, err := db.Pool.Query(ctx,
-		`SELECT id, domain_id, type, name, value, ttl FROM dns_records WHERE domain_id = $1`, domainID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]DNSRecord, 0)
-	for rows.Next() {
-		var r DNSRecord
-		if err := rows.Scan(&r.ID, &r.DomainID, &r.Type, &r.Name, &r.Value, &r.TTL); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
-// CreateDNSRecord inserts a DNS record.
-func (db *DB) CreateDNSRecord(ctx context.Context, r *DNSRecord) error {
-	return db.Pool.QueryRow(ctx,
-		`INSERT INTO dns_records (domain_id, type, name, value, ttl) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		r.DomainID, r.Type, r.Name, r.Value, r.TTL).Scan(&r.ID)
 }

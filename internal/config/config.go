@@ -58,8 +58,3 @@ func Postgres() string {
 		Env("DB_SSLMODE", "disable"),
 	)
 }
-
-// Redis returns the Redis address.
-func Redis() string {
-	return fmt.Sprintf("%s:%s", Env("REDIS_HOST", "localhost"), Env("REDIS_PORT", "6379"))
-}

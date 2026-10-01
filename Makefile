@@ -1,11 +1,10 @@
-.PHONY: build test vet run-api run-waf run-cspm web-dev web-build tidy
+.PHONY: build test vet run-api run-cspm web-dev web-build tidy
 
 GO ?= go
 BIN := bin
 
 build:
 	$(GO) build -o $(BIN)/api ./cmd/api
-	$(GO) build -o $(BIN)/waf ./cmd/waf
 	$(GO) build -o $(BIN)/cspm ./cmd/cspm
 
 test:
@@ -19,9 +18,6 @@ tidy:
 
 run-api:
 	$(GO) run ./cmd/api
-
-run-waf:
-	$(GO) run ./cmd/waf
 
 run-cspm:
 	$(GO) run ./cmd/cspm

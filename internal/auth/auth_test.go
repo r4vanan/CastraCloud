@@ -8,14 +8,14 @@ import (
 )
 
 func TestPasswordHashRoundtrip(t *testing.T) {
-	hash, err := HashPassword("s3cret-p@ss")
+	hash, err := HashPassword("S3cret-P@ssw0rd")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	if hash == "s3cret-p@ss" {
+	if hash == "S3cret-P@ssw0rd" {
 		t.Fatal("hash should not equal plaintext")
 	}
-	if !CheckPassword(hash, "s3cret-p@ss") {
+	if !CheckPassword(hash, "S3cret-P@ssw0rd") {
 		t.Fatal("CheckPassword should accept the correct password")
 	}
 	if CheckPassword(hash, "wrong") {

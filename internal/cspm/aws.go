@@ -20,9 +20,10 @@ type AWS struct {
 	CloudTrail *cloudtrail.Client
 }
 
-// NewAWS loads AWS credentials from the environment/chain and builds clients.
-func NewAWS(ctx context.Context, region string) (*AWS, error) {
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
+// NewAWS loads AWS configuration and builds the clients used by CSPM rules.
+func NewAWS(ctx context.Context, region string, options ...func(*awsconfig.LoadOptions) error) (*AWS, error) {
+	options = append([]func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(region)}, options...)
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
 		return nil, err
 	}

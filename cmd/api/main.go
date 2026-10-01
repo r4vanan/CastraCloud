@@ -9,9 +9,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/castracloud/castracloud/internal/ai"
 	"github.com/castracloud/castracloud/internal/api"
 	"github.com/castracloud/castracloud/internal/auth"
 	"github.com/castracloud/castracloud/internal/config"
+	_ "github.com/castracloud/castracloud/internal/connector/aws"
+	_ "github.com/castracloud/castracloud/internal/connector/azure"
+	_ "github.com/castracloud/castracloud/internal/connector/gcp"
 	"github.com/castracloud/castracloud/internal/logging"
 	"github.com/castracloud/castracloud/internal/store"
 )
@@ -19,6 +23,11 @@ import (
 func main() {
 	log := logging.New(config.Env("LOG_LEVEL", "info"))
 	ctx := context.Background()
+	jwtSecret, err := config.MustEnv("JWT_SECRET")
+	if err != nil {
+		log.Error("configuration failed", "error", err)
+		os.Exit(1)
+	}
 
 	db, err := store.New(ctx, config.Postgres())
 	if err != nil {
@@ -32,7 +41,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := api.NewServer(db, log, config.Env("JWT_SECRET", ""), config.EnvDuration("JWT_TTL", time.Hour))
+	srv := api.NewServer(db, log, jwtSecret, config.EnvDuration("JWT_TTL", time.Hour))
 
 	if issuer := config.Env("OIDC_ISSUER", ""); issuer != "" {
 		oidcCfg := auth.OIDCConfig{
@@ -49,6 +58,25 @@ func main() {
 			log.Info("OIDC SSO enabled", "issuer", issuer)
 		}
 	}
+
+	if key := config.Env("AI_API_KEY", ""); key != "" {
+		model := config.Env("AI_MODEL", "gpt-4o-mini")
+		if client, err := ai.New(ai.Config{
+			BaseURL: config.Env("AI_BASE_URL", "https://api.openai.com/v1"),
+			APIKey:  key,
+			Model:   model,
+		}); err != nil {
+			log.Error("ai init failed", "error", err)
+		} else {
+			srv.EnableAI(client)
+			log.Info("AI assistant enabled", "model", model)
+		}
+	}
+
+	// Continuous scanning: periodically re-scan all configured connectors.
+	scanInterval := config.EnvDuration("SCAN_INTERVAL", 24*time.Hour)
+	srv.ScheduleScans(ctx, scanInterval)
+	log.Info("scheduled scanning enabled", "interval", scanInterval.String())
 
 	addr := ":" + config.Env("API_PORT", "8080")
 	server := &http.Server{Addr: addr, Handler: srv.Router()}

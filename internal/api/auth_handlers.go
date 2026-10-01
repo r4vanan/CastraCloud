@@ -14,12 +14,11 @@ type registerRequest struct {
 	Password string `json:"password"`
 	FullName string `json:"full_name"`
 	Tenant   string `json:"tenant"` // tenant slug; defaults to "default"
-	Role     string `json:"role"`   // ignored for the first user in a tenant
 }
 
-// handleRegister creates a user (and tenant if needed). The first user in a
-// tenant is promoted to owner (bootstrap); subsequent users default to viewer
-// unless a valid role is supplied by an owner.
+// handleRegister creates the owner account for a new tenant. Adding users to
+// an existing tenant must use an authenticated invitation or user-management
+// flow rather than public self-registration.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := parseBody(r, &req); err != nil {
@@ -46,16 +45,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role := req.Role
-	if !auth.IsValidRole(role) {
-		role = auth.RoleViewer
-	}
 	if n, err := s.db.CountUsers(r.Context(), tenant.ID); err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
-	} else if n == 0 {
-		role = auth.RoleOwner // first user bootstraps the tenant as owner
+	} else if n > 0 {
+		s.writeError(w, http.StatusConflict, nil)
+		return
 	}
+	role := auth.RoleOwner
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -100,6 +97,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !user.IsActive || !auth.CheckPassword(user.PasswordHash, req.Password) {
 		s.writeError(w, http.StatusUnauthorized, nil)
+		return
+	}
+
+	if user.MFAEnabled {
+		mfaTok, exp, err := auth.IssueMFAToken(s.jwtSecret, 5*time.Minute, user.ID, user.TenantID)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.audit(r.Context(), "auth.login.mfa_challenge", user.Email, map[string]any{})
+		s.writeJSON(w, http.StatusOK, map[string]any{
+			"mfa_required": true,
+			"mfa_token":    mfaTok,
+			"expires_in":   int(time.Until(exp).Seconds()),
+		})
 		return
 	}
 

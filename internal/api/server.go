@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/castracloud/castracloud/internal/ai"
 	"github.com/castracloud/castracloud/internal/auth"
 	"github.com/castracloud/castracloud/internal/store"
 	"github.com/google/uuid"
@@ -25,6 +26,8 @@ type Server struct {
 	oidcSessions      *oidcSessionStore
 	oidcTenantSlug    string
 	oidcRedirectAfter string
+
+	ai *ai.Client
 }
 
 // NewServer constructs an API server.
@@ -40,6 +43,11 @@ func (s *Server) EnableOIDC(client *auth.OIDCClient, tenantSlug, redirectAfter s
 	s.oidcRedirectAfter = redirectAfter
 }
 
+// EnableAI wires up the LLM client for AI-assisted analysis and rule generation.
+func (s *Server) EnableAI(client *ai.Client) {
+	s.ai = client
+}
+
 // Router builds the HTTP handler with routing and middleware.
 func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
@@ -48,20 +56,39 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("POST /v1/auth/register", s.handleRegister)
 	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
+	mux.HandleFunc("POST /v1/auth/password/reset", s.handleRequestPasswordReset)
+	mux.HandleFunc("POST /v1/auth/password/reset/confirm", s.handleConfirmPasswordReset)
 	mux.HandleFunc("GET /v1/auth/oidc/start", s.handleOIDCStart)
 	mux.HandleFunc("GET /v1/auth/oidc/callback", s.handleOIDCCallback)
 
+	// Public MFA second-factor completion.
+	mux.HandleFunc("POST /v1/auth/mfa/verify-login", s.handleMFAVerifyLogin)
+
 	// Authenticated endpoints, guarded by role-based permissions.
 	mux.HandleFunc("GET /v1/auth/me", s.handleMe)
+
+	mux.HandleFunc("GET /v1/auth/mfa/status", s.handleMFAStatus)
+	mux.HandleFunc("POST /v1/auth/mfa/enroll", s.handleMFAEnroll)
+	mux.HandleFunc("POST /v1/auth/mfa/verify", s.handleMFAVerify)
+	mux.HandleFunc("POST /v1/auth/mfa/disable", s.handleMFADisable)
+	mux.HandleFunc("POST /v1/auth/mfa/recovery-codes", s.handleMFARegenerateCodes)
 
 	mux.HandleFunc("GET /v1/findings", s.guard(auth.PermFindingsRead, s.handleListFindings))
 	mux.HandleFunc("POST /v1/findings/ingest", s.guard(auth.PermFindingsWrite, s.handleIngestFindings))
 	mux.HandleFunc("PATCH /v1/findings/{id}", s.guard(auth.PermFindingsWrite, s.handleUpdateFinding))
 	mux.HandleFunc("GET /v1/summary", s.guard(auth.PermFindingsRead, s.handleSummary))
+	mux.HandleFunc("GET /v1/summary/trend", s.guard(auth.PermFindingsRead, s.handleSummaryTrend))
+
+	mux.HandleFunc("GET /v1/export/findings.csv", s.guard(auth.PermFindingsRead, s.handleExportFindingsCSV))
+	mux.HandleFunc("GET /v1/export/report.pdf", s.guard(auth.PermFindingsRead, s.handleExportReportPDF))
 
 	mux.HandleFunc("GET /v1/assets", s.guard(auth.PermAssetsRead, s.handleListAssets))
 	mux.HandleFunc("GET /v1/attack-path", s.guard(auth.PermAssetsRead, s.handleAttackPath))
 	mux.HandleFunc("POST /v1/vulns/scan", s.guard(auth.PermScansRun, s.handleVulnScan))
+
+	mux.HandleFunc("POST /v1/ai/analyze", s.guard(auth.PermAIUse, s.handleAIAnalyze))
+	mux.HandleFunc("POST /v1/ai/summary", s.guard(auth.PermAIUse, s.handleAISummary))
+	mux.HandleFunc("POST /v1/ai/chat", s.guard(auth.PermAIUse, s.handleAIChat))
 
 	mux.HandleFunc("GET /v1/compliance/frameworks", s.guard(auth.PermComplianceRead, s.handleListFrameworks))
 	mux.HandleFunc("GET /v1/compliance/frameworks/{id}/controls", s.guard(auth.PermComplianceRead, s.handleListControls))
@@ -70,17 +97,15 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /v1/alerts", s.guard(auth.PermAlertsWrite, s.handleCreateAlert))
 	mux.HandleFunc("DELETE /v1/alerts/{id}", s.guard(auth.PermAlertsWrite, s.handleDeleteAlert))
 
-	mux.HandleFunc("GET /v1/waf/rules", s.guard(auth.PermWAFRead, s.handleListWAFRules))
-	mux.HandleFunc("POST /v1/waf/rules", s.guard(auth.PermWAFWrite, s.handleCreateWAFRule))
-	mux.HandleFunc("DELETE /v1/waf/rules/{id}", s.guard(auth.PermWAFWrite, s.handleDeleteWAFRule))
+	mux.HandleFunc("GET /v1/connectors", s.guard(auth.PermConnectorsRead, s.handleListConnectors))
+	mux.HandleFunc("POST /v1/connectors", s.guard(auth.PermConnectorsWrite, s.handleCreateConnector))
+	mux.HandleFunc("DELETE /v1/connectors/{id}", s.guard(auth.PermConnectorsWrite, s.handleDeleteConnector))
+	mux.HandleFunc("POST /v1/connectors/{id}/scan", s.guard(auth.PermConnectorsWrite, s.handleScanConnector))
 
-	mux.HandleFunc("GET /v1/domains", s.guard(auth.PermDomainsRead, s.handleListDomains))
-	mux.HandleFunc("POST /v1/domains", s.guard(auth.PermDomainsWrite, s.handleCreateDomain))
-	mux.HandleFunc("GET /v1/domains/{id}/records", s.guard(auth.PermDomainsRead, s.handleListDNSRecords))
-	mux.HandleFunc("POST /v1/domains/{id}/records", s.guard(auth.PermDomainsWrite, s.handleCreateDNSRecord))
-	mux.HandleFunc("GET /v1/domains/{id}/subdomains", s.guard(auth.PermDomainsRead, s.handleListSubdomains))
-	mux.HandleFunc("POST /v1/domains/{id}/enumerate", s.guard(auth.PermDomainsWrite, s.handleEnumerateSubdomains))
-	mux.HandleFunc("POST /v1/domains/{id}/scan", s.guard(auth.PermDomainsWrite, s.handleScanDomain))
+	mux.HandleFunc("GET /v1/users", s.guard(auth.PermUsersManage, s.handleListUsers))
+	mux.HandleFunc("POST /v1/users", s.guard(auth.PermUsersManage, s.handleCreateUser))
+	mux.HandleFunc("PATCH /v1/users/{id}", s.guard(auth.PermUsersManage, s.handleUpdateUser))
+	mux.HandleFunc("DELETE /v1/users/{id}", s.guard(auth.PermUsersManage, s.handleDeleteUser))
 
 	return s.identity(s.logging(mux))
 }
@@ -95,8 +120,9 @@ const (
 	authedKey
 )
 
-// identity middleware resolves the caller identity: a verified JWT when a
-// secret is configured, or (dev mode) the X-Tenant-ID / X-User-Role headers.
+// identity middleware resolves a verified JWT identity. Requests without a
+// valid token are left anonymous so public routes remain reachable while
+// guarded routes reject them.
 func (s *Server) identity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -107,37 +133,8 @@ func (s *Server) identity(next http.Handler) http.Handler {
 				ctx = context.WithValue(ctx, tenantKey, claims.TenantID)
 				ctx = context.WithValue(ctx, roleKey, claims.Role)
 				ctx = context.WithValue(ctx, authedKey, true)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-			// No/invalid token: leave identity unset so public routes work and
-			// guarded routes reject with 401.
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-
-		// Dev mode (no JWT secret): derive identity from headers.
-		role := r.Header.Get("X-User-Role")
-		if !auth.IsValidRole(role) {
-			role = auth.RoleOwner
-		}
-		var tenantID uuid.UUID
-		if h := r.Header.Get("X-Tenant-ID"); h != "" {
-			if id, perr := uuid.Parse(h); perr == nil {
-				tenantID = id
 			}
 		}
-		if tenantID == uuid.Nil {
-			tenant, err := s.db.EnsureTenant(ctx, "default", "Default Tenant")
-			if err != nil {
-				s.writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			tenantID = tenant.ID
-		}
-		ctx = context.WithValue(ctx, tenantKey, tenantID)
-		ctx = context.WithValue(ctx, roleKey, role)
-		ctx = context.WithValue(ctx, authedKey, true)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -209,6 +206,9 @@ func authedFrom(ctx context.Context) bool {
 
 // audit records a platform action to the audit log.
 func (s *Server) audit(ctx context.Context, action, resource string, metadata map[string]any) {
+	if s.db == nil {
+		return
+	}
 	actor := ""
 	if u := userFrom(ctx); u != uuid.Nil {
 		actor = u.String()

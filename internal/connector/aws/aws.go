@@ -4,7 +4,12 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/castracloud/castracloud/internal/connector"
 	"github.com/castracloud/castracloud/internal/cspm"
 )
@@ -14,9 +19,27 @@ type AWS struct {
 	client *cspm.AWS
 }
 
-// New builds an AWS connector from the default credential chain.
+// New builds an AWS connector from the configured credentials or the default
+// credential chain when the integration uses workload identity.
 func New(ctx context.Context, cfg connector.Config) (connector.Connector, error) {
-	client, err := cspm.NewAWS(ctx, cfg.Region)
+	options := make([]func(*awsconfig.LoadOptions) error, 0, 1)
+	if strings.TrimSpace(cfg.Credentials) != "" {
+		var creds struct {
+			AccessKeyID     string `json:"access_key_id"`
+			SecretAccessKey string `json:"secret_access_key"`
+			SessionToken    string `json:"session_token"`
+		}
+		if err := json.Unmarshal([]byte(cfg.Credentials), &creds); err != nil {
+			return nil, err
+		}
+		if creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
+			return nil, errors.New("aws connector credentials require access_key_id and secret_access_key")
+		}
+		options = append(options, awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken),
+		))
+	}
+	client, err := cspm.NewAWS(ctx, cfg.Region, options...)
 	if err != nil {
 		return nil, err
 	}
