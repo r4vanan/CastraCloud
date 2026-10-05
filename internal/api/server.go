@@ -107,7 +107,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("PATCH /v1/users/{id}", s.guard(auth.PermUsersManage, s.handleUpdateUser))
 	mux.HandleFunc("DELETE /v1/users/{id}", s.guard(auth.PermUsersManage, s.handleDeleteUser))
 
-	return s.identity(s.logging(mux))
+	return securityHeaders(s.identity(s.logging(mux)))
 }
 
 // context keys for identity resolved by the identity middleware.
